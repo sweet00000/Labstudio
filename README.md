@@ -12,7 +12,7 @@ Requires Node.js 22 or newer. Nothing to install.
 
 ```sh
 npm run dev      # then open http://localhost:5173
-npm test         # CAD core + optics physics (30 tests)
+npm test         # CAD, optics, band-gap physics, research helpers (41 tests)
 npm run build    # static site in _site/
 ```
 
@@ -39,6 +39,10 @@ Model (CAD) ──► Print: STL / 3MF placed on the bed, mass for your material
 Wind tunnel: "Send to wind tunnel" drops the part in and builds the solid
 ```
 
+## For agents and automated testing
+
+[AGENTS.md](AGENTS.md) lists the commands and rules. `tools/agent/drive.mjs` drives the studio in Chromium from a JSON scenario and writes a report with screenshots; `tools/research/openalex.mjs` searches the literature. The first open brief is a [tunable band-gap Materials workspace](docs/agents/BANDGAP_BRIEF.md), with a ready-made acceptance test.
+
 ## Repository layout
 
 ```
@@ -50,7 +54,10 @@ apps/studio/          the studio shell and Model (CAD) workspace
 apps/mirrorlab/       optics ray tracer (own README, docs/, physics tests)
 apps/splattunnel/     wind tunnel and scan-to-CAD, optional AWS backend in aws/
 packages/geometry/    shared loaders, voxel tools, mesher, exporters, sample shapes
+packages/physics/     band-gap and optoelectronics reference kernel (tested)
 packages/vendor/      Manifold geometry kernel (WASM)
+tools/agent/          browser driver and scenarios for agents
+tools/research/       OpenAlex literature search and query plans
 scripts/              dev server and site build
 .github/workflows/    ci, pages, browser (manual), splattunnel-aws (inert until configured)
 ROADMAP.md            where things stand and what to build next

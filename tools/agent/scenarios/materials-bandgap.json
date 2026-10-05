@@ -1,0 +1,42 @@
+{
+  "name": "materials-bandgap",
+  "description": "Acceptance test for the planned Materials (tunable band gap) workspace. It FAILS today on purpose: the agent's job is to build the feature until this passes. The selector and window.materials contract is defined in docs/agents/BANDGAP_BRIEF.md.",
+  "start": "/",
+  "viewport": [1440, 900],
+  "steps": [
+    { "do": "tab", "name": "materials", "settle": 800, "note": "a fourth tab, next to Model, Optics, Wind tunnel" },
+    { "do": "waitFor", "frame": "materials", "js": "window.materials?.result" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.state.system", "equals": "InGaAs", "note": "default: In(x)Ga(1-x)As at x = 0.53, 300 K (lattice-matched to InP)" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.Eg", "approx": 0.745, "tol": 0.02 },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.direct", "equals": true },
+    { "do": "screenshot", "name": "materials-default" },
+
+    { "do": "fill", "frame": "materials", "sel": "#temperature", "value": "77", "note": "cooling widens the gap (Varshni)" },
+    { "do": "waitFor", "frame": "materials", "js": "window.materials.state.T === 77" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.Eg", "min": 0.78, "max": 0.83 },
+
+    { "do": "fill", "frame": "materials", "sel": "#targetNm", "value": "1550", "note": "inverse design: pick the composition for a 1550 nm gap" },
+    { "do": "fill", "frame": "materials", "sel": "#temperature", "value": "300" },
+    { "do": "click", "frame": "materials", "sel": "#solveComposition" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.state.x", "approx": 0.47, "tol": 0.05 },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.wavelengthNm", "approx": 1550, "tol": 0.002 },
+
+    { "do": "select", "frame": "materials", "sel": "#system", "value": "AlGaAs" },
+    { "do": "fill", "frame": "materials", "sel": "#composition", "value": "0.6" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.direct", "equals": false, "note": "AlGaAs above x ≈ 0.43 is indirect; the UI must say so" },
+    { "do": "expectText", "frame": "materials", "sel": "#gapKind", "contains": "indirect" },
+
+    { "do": "select", "frame": "materials", "sel": "#system", "value": "CdSe-dot" },
+    { "do": "fill", "frame": "materials", "sel": "#sizeNm", "value": "2" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.Eg", "approx": 2.55, "tol": 0.03, "note": "Brus model at R = 2 nm" },
+    { "do": "expectText", "frame": "materials", "sel": "#modelLimits", "contains": "overestimates", "note": "the UI states the Brus model's known limitation" },
+
+    { "do": "fill", "frame": "materials", "sel": "#modHz", "value": "1e9", "note": "AC photoresponse panel" },
+    { "do": "fill", "frame": "materials", "sel": "#loadOhm", "value": "50" },
+    { "do": "fill", "frame": "materials", "sel": "#capPf", "value": "1" },
+    { "do": "expect", "frame": "materials", "js": "window.materials.result.ac.fRC", "approx": 3.183e9, "tol": 0.001 },
+    { "do": "screenshot", "name": "materials-dot-ac" },
+
+    { "do": "click", "frame": "materials", "sel": "#exportCsv", "soft": true, "note": "optional: Eg vs x / T / size sweep as CSV" }
+  ]
+}

@@ -5,11 +5,18 @@
   "description": "Browser engineering studio: CAD, optics ray tracing and wind tunnel in one codebase",
   "type": "module",
   "license": "GPL-3.0-or-later",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "node --test apps/studio/tests/*.test.mjs apps/mirrorlab/tests/*.test.mjs",
+    "test": "node --test apps/studio/tests/*.test.mjs apps/mirrorlab/tests/*.test.mjs packages/physics/tests/*.test.mjs tools/research/*.test.mjs",
     "test:geometry": "cd apps/splattunnel/web && mkdir -p out && deno run -A test/export_test.js",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "agent": "node tools/agent/drive.mjs",
+    "research": "node tools/research/openalex.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.51.1"
   }
 }
