@@ -1,0 +1,24 @@
+name: Physics discrepancy
+description: Report a numerical result that differs from an analytic, reference, or measured case.
+body:
+  - type: textarea
+    id: case
+    attributes:
+      label: Case and reproduction
+      description: Attach exported project JSON, describe units and browser/solver version, and list reproduction steps.
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Expected behavior and source
+      description: State the analytic equation, independent solver case, or measurement and uncertainty.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Observed result
+      description: Include sampling, numerical values, and screenshots if useful.
+    validations:
+      required: true

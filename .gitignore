@@ -1,0 +1,8 @@
+node_modules/
+dist/
+_site/
+test-results/
+__pycache__/
+.DS_Store
+.env
+*.log

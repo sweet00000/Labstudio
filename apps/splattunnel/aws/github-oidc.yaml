@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Lets GitHub Actions in ONE repository deploy the Splat Tunnel stack, using short-lived
+  OIDC credentials (no AWS keys stored in GitHub). Deploy once from CloudShell:
+  aws cloudformation deploy --template-file github-oidc.yaml --stack-name splattunnel-github
+    --capabilities CAPABILITY_NAMED_IAM --parameter-overrides Repo=OWNER/REPO
+
+Parameters:
+  Repo:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
+    Description: GitHub owner/repo allowed to deploy, e.g. sweet00000/splattunnel
+  CreateProvider:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Set false if this account already has the token.actions.githubusercontent.com provider.
+  StackName:
+    Type: String
+    Default: splattunnel
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateProvider, 'true']
+
+Resources:
+  Provider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: splattunnel-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # only the main branch of this one repo
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${Repo}:ref:refs/heads/main'
+      ManagedPolicyArns:
+        # needed for the services the stack creates (Batch, Lambda, API Gateway, S3, ECR, CodeBuild, SNS, Budgets, EC2)
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      Policies:
+        - PolicyName: stack-roles-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # IAM changes are limited to roles/profiles the stack itself names (<stack>-*)
+              - Effect: Allow
+                Action: [iam:CreateRole, iam:DeleteRole, iam:GetRole, iam:PassRole, iam:TagRole, iam:UntagRole,
+                         iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy, iam:GetRolePolicy,
+                         iam:UpdateAssumeRolePolicy, iam:ListRolePolicies, iam:ListAttachedRolePolicies,
+                         iam:CreateInstanceProfile, iam:DeleteInstanceProfile, iam:GetInstanceProfile,
+                         iam:AddRoleToInstanceProfile, iam:RemoveRoleFromInstanceProfile]
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${StackName}-*'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:instance-profile/${StackName}-*'
+              - Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    iam:AWSServiceName: [batch.amazonaws.com, spot.amazonaws.com, ecs.amazonaws.com]
+
+Outputs:
+  RoleArn:
+    Description: Put this in the GitHub repo secret AWS_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn

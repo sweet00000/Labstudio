@@ -1,0 +1,35 @@
+# Updates the optional Splat Tunnel AWS backend when apps/splattunnel/aws changes on main.
+# Does nothing until the repo variable AWS_REGION and secret AWS_ROLE_ARN are set
+# (see apps/splattunnel/README.md) and the first deploy was done once with deploy.sh.
+name: splattunnel-aws
+on:
+  push:
+    branches: [main]
+    paths: ['apps/splattunnel/aws/**']
+  workflow_dispatch:
+    inputs:
+      rebuild_images: { description: 'Rebuild container images', type: boolean, default: false }
+permissions:
+  contents: read
+  id-token: write
+concurrency: { group: aws-deploy, cancel-in-progress: false }
+jobs:
+  deploy:
+    if: ${{ vars.AWS_REGION != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Did the container code change?
+        id: changes
+        run: |
+          if [ "${{ inputs.rebuild_images }}" = "true" ] || git diff --name-only HEAD~1 HEAD | grep -q '^apps/splattunnel/aws/containers/'; then
+            echo "rebuild=1" >> "$GITHUB_OUTPUT"; else echo "rebuild=0" >> "$GITHUB_OUTPUT"; fi
+      - name: Update stack
+        working-directory: apps/splattunnel/aws
+        env: { REBUILD_IMAGES: '${{ steps.changes.outputs.rebuild }}', AWS_REGION: '${{ vars.AWS_REGION }}' }
+        run: ./deploy.sh --update

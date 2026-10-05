@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="A local browser workbench for 3D mirror optics. Trace real ray paths, explore birdbath assemblies, and sweep your design parameters.">
+  <meta name="theme-color" content="#101719"><title>Mirrorlab · Optical workbench</title>
+  <link rel="icon" href="./favicon.svg"><link rel="stylesheet" href="./style.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./" aria-label="Mirrorlab home"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M5 27 16 9l7 18M16 9h14M23 27h7"/><path d="m5 17 9 0 9 10" class="accent"/></svg><span>MIRRORLAB</span><span class="version">0.1</span></a>
+  <span class="header-sep"></span><span class="workspace-name">Optical workbench <span>/</span> <b id="projectTitle">Birdbath study</b></span>
+  <nav class="top-actions" aria-label="Project actions"><button id="guideBtn" class="quiet">Physics guide</button><button id="roadmapBtn" class="quiet">Roadmap ↗</button><button id="importBtn" class="quiet">Open</button><button id="saveBtn" class="save-btn">↓ Save project</button></nav>
+  <input type="file" id="projectFile" accept=".json,application/json" hidden>
+</header>
+<main class="workbench">
+  <aside class="sidebar">
+    <div class="section-title">WORKSPACE <span class="live-tag">LOCAL</span></div>
+    <h1>Design the path.<br><span>Follow the light.</span></h1>
+    <p class="subtle intro">A small optical bench.<br>A foundation for a bigger world.</p>
+    <label class="mini-label" for="preset">STARTING POINT</label>
+    <select id="preset"><option value="birdbath">Birdbath display</option><option value="collimator">Parabolic collimator</option><option value="focus">Spherical focus</option><option value="flat">Plane reflection</option></select>
+    <div class="section-title scene-title">SCENE <span id="elementCount">04 ELEMENTS</span></div>
+    <div class="scene-tree" aria-label="Scene components">
+      <button data-inspect="sourcePanel"><span class="tree-icon amber">▦</span><span>Light source<small id="sourceTreeLabel">3 × 3 sampled display</small></span><span class="tree-dot amber-bg"></span></button>
+      <button data-inspect="splitterPanel" id="splitterTree"><span class="tree-icon cyan">◇</span><span>Beam splitter<small>Ideal thin surface · 45°</small></span><span class="tree-dot cyan-bg"></span></button>
+      <button data-inspect="mirrorPanel" class="selected"><span class="tree-icon mint">◗</span><span>Primary mirror<small id="mirrorTreeLabel">Spherical · Ø 36 mm</small></span><span class="tree-dot mint-bg"></span></button>
+      <button data-inspect="eyePanel"><span class="tree-icon violet">◎</span><span>Eye pupil<small id="eyeTreeLabel">Ø 5 mm · z 72 mm</small></span><span class="tree-dot violet-bg"></span></button>
+    </div>
+    <div class="section-title">VIEW OPTIONS</div>
+    <div class="view-options"><label><input type="checkbox" id="showRays" checked> Ray paths <span>R</span></label><label><input type="checkbox" id="showGrid" checked> Reference grid</label><label><input type="checkbox" id="showMisses"> Missed rays</label><label><input type="checkbox" id="showNormals"> Surface normals</label></div>
+    <div class="sidebar-foot"><span class="micro-dot"></span> Runs on your device<p>Projects stay in this browser until you export them.</p><button id="resetBtn" class="text-button">Reset this study ↺</button></div>
+  </aside>
+  <section class="center-column" aria-label="Simulation workspace">
+    <div class="compact-presets"><label for="quickPreset">STUDY</label><select id="quickPreset"><option value="birdbath">Birdbath display</option><option value="collimator">Parabolic collimator</option><option value="focus">Spherical focus</option><option value="flat">Plane reflection</option></select><button id="quickReset" title="Reset study">↺ Reset</button></div>
+    <div class="viewport-wrap">
+      <div class="view-toolbar"><div><span class="micro-dot"></span><b>3D VIEWPORT</b><span class="toolbar-divider">/</span><span>Millimetres</span></div><div class="camera-buttons"><button data-camera="perspective" class="active" title="Perspective view">3D</button><button data-camera="side" title="Side view">Side</button><button data-camera="front" title="Front view">Front</button><button data-camera="fit" title="Fit scene">Fit ↗</button><button id="snapshotBtn" title="Save viewport as PNG">↓ PNG</button></div></div>
+      <div id="viewport" aria-label="Interactive 3D mirror scene. Drag to orbit; scroll to zoom.">
+        <div class="viewport-heading"><span class="eyebrow">STUDY 001</span><h2 id="sceneHeading">The birdbath assembly</h2><p id="sceneSubheading">One display. One curved mirror. A folded path to the eye.</p></div>
+        <div class="viewport-label" id="label-source"><i class="amber-bg"></i>DISPLAY</div><div class="viewport-label" id="label-mirror"><i class="mint-bg"></i>MIRROR</div><div class="viewport-label" id="label-splitter"><i class="cyan-bg"></i>SPLITTER</div><div class="viewport-label" id="label-eye"><i class="violet-bg"></i>PUPIL</div>
+        <div class="axis-key"><span class="axis-x">X</span><span class="axis-y">Y</span><span class="axis-z">Z</span></div>
+        <div class="viewport-bottom"><span>Drag to orbit <i>·</i> Scroll to zoom <i>·</i> Right-drag to pan</span><span id="rayCount">Tracing…</span></div>
+        <div id="renderError" class="render-error" hidden></div>
+      </div>
+      <div class="metrics" aria-label="Simulation results">
+        <div><span>EXIT-BUNDLE RMS <button class="info" title="Root-mean-square angular spread about each field's own mean direction, combined across fields. Lower is more collimated. Measured before pupil clipping.">i</button></span><strong id="rmsMetric">—</strong><small>arcmin · per-field spread</small></div>
+        <div><span>LIGHT IN PUPIL <button class="info" title="Fraction of equal-power rays launched within the specified source cone, summed across sampled fields. Not total display efficiency.">i</button></span><strong id="powerMetric">—</strong><small>of sampled launch power</small></div>
+        <div><span>FIELDS REACHING EYE</span><strong id="coverageMetric">—</strong><small>at least one ray per field</small></div>
+        <div><span>PARAXIAL FOCAL LENGTH</span><strong id="focusMetric">—</strong><small id="focusCaption">R / 2 · near-axis estimate</small></div>
+      </div>
+    </div>
+    <section class="analysis">
+      <div class="analysis-header"><div class="tabs" role="tablist" aria-label="Analysis"><button role="tab" aria-selected="true" data-tab="footprint">Pupil footprint</button><button role="tab" aria-selected="false" data-tab="eyebox">Eyebox map</button><button role="tab" aria-selected="false" data-tab="sweep">Parameter sweep</button></div><button class="quiet small" id="csvBtn">Export data ↓</button></div>
+      <div id="tab-footprint" class="analysis-body" role="tabpanel"><div class="plot-wrap"><canvas id="footprintCanvas" aria-label="Ray intersections with the eye plane"></canvas></div><div class="plot-note"><span class="eyebrow">AT THE EYE PLANE</span><h3>A window into the beam.</h3><p>Dots are ray intersections, colored by display field. The ring is your pupil; move it in the inspector.</p><dl><dt>RMS within pupil</dt><dd id="eyeRms">—</dd><dt>Fewest pupil samples / field</dt><dd id="minHits">—</dd><dt>Energy balance error</dt><dd id="energyError">—</dd></dl><p class="caution" id="samplingNote"></p></div></div>
+      <div id="tab-eyebox" class="analysis-body" role="tabpanel" hidden><div class="plot-wrap"><canvas id="eyeboxCanvas" aria-label="Map of pupil-collected power at different eye positions"></canvas></div><div class="plot-note"><span class="eyebrow">MOVE THE EYE</span><h3>Find the useful viewing region.</h3><p>Each cell places the same pupil at a new position. Color is collected power. Pale outlines mark cells with every sampled field present.</p><p>Click the map to move the eye. A field being present is not a sharpness guarantee.</p><p class="legend-gradient"><span>Less light</span><span>More light</span></p></div></div>
+      <div id="tab-sweep" class="analysis-body" role="tabpanel" hidden><div class="plot-wrap"><canvas id="sweepCanvas" aria-label="Mirror curvature versus source path sweep"></canvas><span id="sweepPlaceholder">Explore 169 possible designs.</span></div><div class="plot-note"><span class="eyebrow">CURVATURE × SOURCE PATH</span><h3>Let the geometry compete.</h3><p>Search ±24% around the current radius and path length. Lower exit-bundle angular RMS wins; dark or undersampled designs are excluded.</p><button id="sweepBtn" class="primary">Run 13 × 13 sweep <span>↗</span></button><button id="applyBestBtn" class="secondary" disabled>Apply best candidate</button><p id="sweepStatus" class="subtle" aria-live="polite">Uses the current field and ray sampling.</p></div></div>
+    </section>
+  </section>
+  <aside class="inspector" aria-label="Optical parameters">
+    <div class="inspector-top"><span class="section-title">INSPECTOR</span><span class="auto-badge">↻ LIVE</span></div>
+    <section class="control-section" id="mirrorPanel"><div class="control-title"><span class="mint">◗</span><h2>Primary mirror</h2><span>01</span></div>
+      <label class="mini-label" for="surface">SURFACE</label><select id="surface" data-param="surface"><option value="sphere">Spherical concave</option><option value="paraboloid">Parabolic concave</option><option value="flat">Plane mirror</option></select>
+      <div id="mirrorControls"></div>
+      <div class="pair-controls" id="tiltControls"></div>
+      <div class="formula">d′ = d − 2(d · n)n<span>Exact specular reflection</span></div>
+    </section>
+    <section class="control-section" id="sourcePanel"><div class="control-title"><span class="amber">▦</span><h2>Light source</h2><span>02</span></div>
+      <label class="mini-label" for="layout">OPTICAL PATH</label><select id="layout" data-param="layout"><option value="birdbath">Folded birdbath</option><option value="single">Single mirror</option></select>
+      <label class="mini-label" for="source">EMISSION</label><select id="source" data-param="source"><option value="grid">Display · 9 field points</option><option value="point">On-axis point source</option><option value="parallel">Parallel incident beam</option></select>
+      <div id="sourceControls"></div>
+      <label class="mini-label" for="samples">RAYS PER FIELD</label><select id="samples" data-param="samples"><option value="256">256 · draft</option><option value="1024">1,024 · standard</option><option value="4096">4,096 · fine</option></select>
+      <p class="control-note" id="emissionNote">Uniform solid-angle cone. Each field carries equal power.</p>
+    </section>
+    <section class="control-section" id="splitterPanel"><div class="control-title"><span class="cyan">◇</span><h2>Beam splitter</h2><span>03</span></div><div id="splitterControls"></div><p class="control-note">45° · zero thickness · T = 1 − R<br>Other ports are counted, not traced.</p></section>
+    <section class="control-section" id="eyePanel"><div class="control-title"><span class="violet">◎</span><h2>Eye pupil</h2><span>04</span></div><div id="eyeControls"></div></section>
+    <div class="model-note">Geometrical optics v0.1<br><span>Ideal surfaces in air. No diffraction, refraction, polarization, or ghost tracing.</span></div>
+  </aside>
+</main>
+<footer class="statusbar"><div><span class="micro-dot" id="statusDot"></span><span id="statusText" role="status">Initializing optical bench…</span></div><span>Float64 reference solver <i>·</i> WebGL viewport <i>·</i> mm</span></footer>
+<dialog id="guideDialog"><button class="dialog-close" aria-label="Close guide">×</button><span class="eyebrow">MODEL NOTES</span><h2>What the light is doing.</h2><p>This bench intersects 3D rays with analytic surfaces and reflects them using <b>d′ = d − 2(d · n)n</b>. Drawing detail does not control optical accuracy.</p><div class="guide-grid"><article><h3>Mirror geometry</h3><p>Spherical sag is R − √(R² − r²). A paraboloid has sag r² / (2R), with focal length R / 2. Plane mirrors have no focusing power. Mirror pitch and yaw rotate the actual surface.</p></article><article><h3>Display → eye</h3><p>Each of nine field points launches its own cone. Rays from one point should leave nearly parallel; different points leave at different angles. Ray colors identify fields, not wavelengths.</p></article><article><h3>Birdbath path</h3><p>The intended branch is display → splitter reflection → curved mirror reflection → splitter transmission → eye. Splitter thickness and all secondary paths are omitted. The maximum branch fraction is Rₛ × ρₘ × (1 − Rₛ).</p></article><article><h3>Reading the results</h3><p>Exit RMS measures collimation before pupil clipping. Pupil RMS depends on eye position. Power is normalized to the sampled source cone, not the entire display emission. Sparse pupil hits need finer sampling.</p></article></div><p class="dialog-callout">These are idealized design studies. The glasses’ real optical prescription, coating data, emitter distribution, finite pixels, aberration targets, and manufacturing tolerances belong in the next validation stage.</p></dialog>
+<dialog id="roadmapDialog"><button class="dialog-close" aria-label="Close roadmap">×</button><span class="eyebrow">THE BIGGER WORKBENCH</span><h2>Start with light.<br>Build toward a world.</h2><p>A sequence of independently testable modules, sharing geometry, units, parameters, and provenance.</p><ol class="roadmap-list"><li><span>01</span><div><b>Mirrorlab <em>NOW</em></b><p>Analytic 3D mirrors, birdbath path, pupil sampling, saved projects, and grid sweeps.</p></div></li><li><span>02</span><div><b>Optical engineering</b><p>Measured emission, refractive surfaces, coatings, optical reference comparisons, tolerances, and real lens prescriptions.</p></div></li><li><span>03</span><div><b>Parametric assemblies</b><p>Replicad / OpenCascade adapter, constraints, undo, mounts, frame geometry, and reproducible solver jobs.</p></div></li><li><span>04</span><div><b>Scans + multiphysics</b><p>Bring in Splat Tunnel’s loaders and mesh pipeline; verify its flow solver separately before coupling it to the workbench.</p></div></li><li><span>05</span><div><b>World-scale scenes</b><p>Georeferenced local engineering frames, streamed 3D Tiles, object storage, collaboration, and bounded simulation regions.</p></div></li></ol><p class="subtle">The repository includes architecture decisions, numerical acceptance gates, a prioritized backlog, and the Splat Tunnel integration plan.</p></dialog>
+<div id="toast" role="status" hidden></div>
+<script type="module" src="./src/app.js"></script>
+</body></html>
