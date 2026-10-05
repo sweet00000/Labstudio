@@ -1,19 +1,22 @@
-# Manual Mirrorlab browser check; screenshots are kept as a workflow artifact.
+# Manual browser checks; screenshots are kept as a workflow artifact.
 name: browser
 on: { workflow_dispatch: {} }
 permissions:
   contents: read
 jobs:
-  mirrorlab:
+  browser:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: apps/mirrorlab } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm install --no-save --package-lock=false playwright@1.51.1
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+      - name: Studio
+        run: node apps/studio/tests/browser.mjs
+      - name: Mirrorlab
+        working-directory: apps/mirrorlab
+        run: npm run test:browser
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: browser-check-results, path: apps/mirrorlab/test-results/ }
+        with: { name: browser-check-results, path: '**/test-results/' }

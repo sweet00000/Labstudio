@@ -78,7 +78,7 @@ async function useScan(scan, name) {
   $('splatOpts').hidden = scan.kind !== 'splats';
   $('expSrc').querySelector('[value="orig"]').disabled = scan.kind !== 'mesh';
   if (scan.kind !== 'mesh') $('expSrc').value = 'solid';
-  if (scan.meta) { $('realLen').value = scan.meta.length; $('ground').checked = scan.meta.ground; $('upAxis').value = 'y'; }
+  if (scan.meta) { $('realLen').value = scan.meta.length; $('ground').checked = scan.meta.ground; $('upAxis').value = scan.meta.upAxis || 'y'; }
   else $('realLen').value = +Math.max(...b.size).toPrecision(3);
   $('buildBtn').disabled = false;
   S.tunnel = null; S.bodyMask = null;
@@ -104,12 +104,27 @@ drop.addEventListener('drop', async (e) => {
   status(`Reading ${f.name}…`); await tick();
   try { await useScan(await loadFile(f), f.name); } catch (err) { status(err.message); }
 });
-document.querySelectorAll('[data-sample]').forEach((b) => b.addEventListener('click', async () => {
+async function loadSample(name) {
   status('Building the sample shape…'); await tick();
-  const s = makeSample(b.dataset.sample);
+  const s = makeSample(name);
   await useScan(s, `${s.meta.label.toLowerCase()}.stl`);
   await buildSolid();
-}));
+}
+document.querySelectorAll('[data-sample]').forEach((b) => b.addEventListener('click', () => loadSample(b.dataset.sample)));
+
+// LabStudio hands models over from the CAD workspace (same origin only):
+// { type: 'labstudio:mesh', name, pos: Float32Array (mm, Z up), idx: Uint32Array }
+async function receiveMesh(m) {
+  const b = bounds(m.pos);
+  const meta = { label: m.name, length: Math.max(...b.size) / 1000, ground: m.ground ?? true, upAxis: 'z' };
+  await useScan({ kind: 'mesh', pos: m.pos, idx: m.idx, col: null, meta }, `${m.name}.stl`);
+  if (S.device) await buildSolid();
+}
+const pendingMeshes = [];
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || e.data?.type !== 'labstudio:mesh') return;
+  if (S.device) receiveMesh(e.data).catch((err) => status(err.message)); else pendingMeshes.push(e.data);
+});
 
 // ---------------- step 2: orient, fit, voxelize ----------------
 // Rotate file coordinates into tunnel axes (x = downstream, y = up).
@@ -458,4 +473,12 @@ setupCloud({
   status,
 });
 
-boot().catch((e) => { status(`Couldn’t start the GPU: ${e.message}`); });
+// Start with a model in the tunnel: one handed over before boot finished, else the
+// hatchback sample (skip with ?empty).
+boot()
+  .then(async () => {
+    if (!S.device) return;
+    if (pendingMeshes.length) await receiveMesh(pendingMeshes.pop());
+    else if (!S.scan && !new URLSearchParams(location.search).has('empty')) await loadSample('car');
+  })
+  .catch((e) => { status(`Couldn’t start the GPU: ${e.message}`); });

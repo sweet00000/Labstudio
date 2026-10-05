@@ -76,4 +76,4 @@ For the initial birdbath preset, the 4,096-rays-per-field check gives approximat
 
 ## License
 
-MIT, copyright Alexander Sweet. Three.js retains its own MIT notice. Splat Tunnel now lives beside this app at `../splattunnel/` in the LabStudio repository and keeps its own license and dependency notices.
+Copyright © 2026 Alexander Sweet. GNU General Public License v3.0 or later; see [`LICENSE`](../../LICENSE) at the repository root. The vendored Three.js keeps its own MIT notice in `web/vendor/three/LICENSE`.

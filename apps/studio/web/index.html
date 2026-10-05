@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LabStudio</title>
+  <meta name="description" content="Model, scan, simulate and print in the browser: CAD, optics ray tracing and a GPU wind tunnel.">
+  <link rel="icon" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{"imports":{"three":"../../mirrorlab/web/vendor/three/three.module.min.js"}}</script>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 12 4l8 16H4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="14" r="2.4" fill="currentColor"/></svg>LabStudio</div>
+  <nav class="tabs" role="tablist" aria-label="Workspaces">
+    <button role="tab" data-tab="model" aria-selected="true">Model</button>
+    <button role="tab" data-tab="optics" aria-selected="false">Optics</button>
+    <button role="tab" data-tab="tunnel" aria-selected="false">Wind tunnel</button>
+  </nav>
+  <div class="bar-actions">
+    <button id="openBtn" class="quiet">Open</button>
+    <button id="saveBtn">Save project</button>
+    <input id="projectFile" type="file" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<main>
+  <section id="tab-model" class="workspace" role="tabpanel">
+    <aside class="side left">
+      <div class="panel">
+        <h2>Add</h2>
+        <div class="tool-grid">
+          <button data-add="box">Box</button>
+          <button data-add="cylinder">Cylinder</button>
+          <button data-add="sphere">Sphere</button>
+          <button id="importBtn" class="wide">Import scan or mesh…</button>
+        </div>
+        <input id="scanFile" type="file" accept=".stl,.obj,.ply,.glb,.splat" hidden>
+        <h3>Start from</h3>
+        <div class="tool-grid">
+          <button data-template="birdbath" class="wide">Birdbath housing (from Optics)</button>
+          <button data-template="hatchback" class="wide">Hatchback (wind tunnel sample)</button>
+          <button id="newBtn" class="wide quiet">Blank model</button>
+        </div>
+      </div>
+
+      <div id="importPanel" class="panel import" hidden>
+        <h2>Import</h2>
+        <p id="importInfo" class="note"></p>
+        <div class="form">
+          <label for="impUnit">File units</label>
+          <select id="impUnit"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">inch</option></select>
+          <label for="impUp">Up axis in file</label>
+          <select id="impUp"><option value="z">Z up</option><option value="y">Y up</option><option value="-y">Y down (COLMAP)</option></select>
+          <label for="impFit">Scale longest side to</label>
+          <span class="inp"><input id="impFit" type="number" min="0" step="any" placeholder="keep"><em>mm</em></span>
+          <label for="impRepair">Make solid</label>
+          <select id="impRepair"><option value="auto">Only if needed</option><option value="always">Always rebuild</option></select>
+          <label for="impCells">Rebuild detail</label>
+          <span class="inp"><input id="impCells" type="number" min="24" max="320" step="8" value="112"><em>cells</em></span>
+          <label for="impRole">Use as</label>
+          <select id="impRole"><option value="part">Part</option><option value="reference">Reference only</option></select>
+        </div>
+        <div class="row"><button id="impGo">Add to model</button><button id="impCancel" class="quiet">Cancel</button></div>
+      </div>
+
+      <div class="panel grow">
+        <div class="panel-head"><h2>Features</h2><span class="row tight"><button id="undoBtn" class="icon" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button><button id="redoBtn" class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button></span></div>
+        <ol id="tree" class="tree" aria-label="Feature list"></ol>
+        <p class="note">Features combine top to bottom. <b>+</b> adds, <b>−</b> cuts, <b>∩</b> keeps the overlap. Reference bodies show in blue and are never exported.</p>
+      </div>
+    </aside>
+
+    <div class="stage">
+      <canvas id="view" aria-label="3D model view"></canvas>
+      <div class="view-tools">
+        <button data-view="iso">Iso</button><button data-view="front">Front</button><button data-view="top">Top</button><button data-view="right">Right</button><button id="fitBtn">Fit</button>
+        <label class="check"><input id="showRef" type="checkbox" checked> Reference</label>
+        <label class="check"><input id="xray" type="checkbox"> X-ray</label>
+      </div>
+      <div id="opticsBanner" class="banner" hidden>The optics changed. <button id="opticsUpdate">Update housing</button></div>
+      <div id="status" class="status" role="status">Loading the geometry kernel…</div>
+    </div>
+
+    <aside class="side right">
+      <div id="props" class="panel"><h2>Properties</h2><p class="note">Select a feature to edit it.</p></div>
+      <div class="panel">
+        <h2>Analysis</h2>
+        <dl id="stats" class="stats"></dl>
+        <div class="form">
+          <label for="material">Material</label>
+          <select id="material">
+            <option value="1.24">PLA (1.24 g/cm³)</option><option value="1.27">PETG (1.27)</option><option value="1.04">ABS (1.04)</option>
+            <option value="1.15">Resin (1.15)</option><option value="1.14">Nylon (1.14)</option><option value="2.70">Aluminium (2.70)</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Output</h2>
+        <h3>Print or CAD file</h3>
+        <div class="tool-grid four">
+          <button data-export="stl">STL</button><button data-export="3mf">3MF</button><button data-export="obj">OBJ</button><button data-export="glb">GLB</button>
+        </div>
+        <label class="check"><input id="onBed" type="checkbox" checked> Place on the print bed (Z = 0)</label>
+        <h3>Analysis</h3>
+        <div class="tool-grid">
+          <button id="toTunnel" class="wide">Send to wind tunnel</button>
+          <button id="shotBtn" class="wide quiet">Save picture (PNG)</button>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section id="tab-optics" class="frame-tab" role="tabpanel" hidden></section>
+  <section id="tab-tunnel" class="frame-tab" role="tabpanel" hidden></section>
+</main>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

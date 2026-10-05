@@ -1,0 +1,15 @@
+{
+  "name": "labstudio",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Browser engineering studio: CAD, optics ray tracing and wind tunnel in one codebase",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test apps/studio/tests/*.test.mjs apps/mirrorlab/tests/*.test.mjs",
+    "test:geometry": "cd apps/splattunnel/web && mkdir -p out && deno run -A test/export_test.js",
+    "build": "node scripts/build.mjs"
+  }
+}

@@ -4,15 +4,19 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  mirrorlab:
+  studio-and-optics:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: apps/mirrorlab } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
-      - run: npm test
-      - run: npm run build
+      - name: CAD core and optics physics
+        run: npm test
+      - name: Site build
+        run: npm run build
+      - name: Mirrorlab standalone build
+        working-directory: apps/mirrorlab
+        run: npm run build
   splattunnel:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: apps/splattunnel } }
