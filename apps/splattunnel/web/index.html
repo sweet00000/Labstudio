@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Splat Tunnel</title>
+<meta name="description" content="Drop a 3D scan or Gaussian splat into a GPU wind tunnel in your browser, then export it as STL, 3MF, GLB, OBJ or PLY.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="mark" href="./" aria-label="Splat Tunnel home">
+    <svg viewBox="0 0 40 24" width="40" height="24" aria-hidden="true"><path d="M1 8h14c6 0 8-6 14-6M1 12h16c7 0 9 4 22 4M1 16h14c5 0 7 6 14 6" fill="none" stroke="currentColor" stroke-width="1.6"/><ellipse cx="20" cy="12" rx="5" ry="3.4" fill="currentColor"/></svg>
+    <span>Splat Tunnel</span>
+  </a>
+  <button id="themeBtn" class="ghost" type="button" aria-label="Switch light or dark theme">Blueprint</button>
+</header>
+
+<main class="layout">
+  <section class="stage" aria-label="Wind tunnel view">
+    <canvas id="view" aria-label="3D view of the model in the wind tunnel. Drag to orbit, pinch or scroll to zoom."></canvas>
+    <div class="gauges" aria-live="polite">
+      <div class="gauge big"><span class="g-val" id="gCd">&ndash;</span><span class="g-lab">drag coefficient</span></div>
+      <div class="gauge"><span class="g-val" id="gCl">&ndash;</span><span class="g-lab">lift coefficient</span></div>
+      <div class="gauge"><span class="g-val" id="gF">&ndash;</span><span class="g-lab">drag force</span></div>
+    </div>
+    <p class="status" id="status">Load a scan or pick a sample shape to start.</p>
+    <div class="legend" id="legend" hidden>
+      <span>slower</span><i class="ramp"></i><span>faster than the wind</span>
+    </div>
+    <div class="nogpu" id="nogpu" hidden>
+      <h2>This browser can&rsquo;t run the tunnel</h2>
+      <p>The simulator needs WebGPU. Use a current Chrome or Edge on desktop or Android, or Safari 26 on iPhone, iPad or Mac. Exports still need a GPU, since the solid is built from the same pipeline.</p>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <ol class="steps">
+      <li class="step" id="step1">
+        <h2>Load a scan</h2>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept=".ply,.splat,.stl,.obj,.glb">
+          <span class="drop-main">Choose a file or drop it here</span>
+          <span class="drop-sub">Gaussian splat .ply or .splat, triangle-splat .ply, or a mesh in .stl, .obj, .glb</span>
+        </label>
+        <div class="samples" role="group" aria-label="Sample shapes">
+          <span>Or try</span>
+          <button type="button" class="chip" data-sample="car">Hatchback</button>
+          <button type="button" class="chip" data-sample="sphere">Sphere</button>
+          <button type="button" class="chip" data-sample="cube">Cube</button>
+          <button type="button" class="chip" data-sample="wing">Wing</button>
+        </div>
+        <p class="info" id="scanInfo"></p>
+      </li>
+
+      <li class="step" id="step2">
+        <h2>Fit it in the tunnel</h2>
+        <div class="row">
+          <label for="realLen">Real length</label>
+          <span class="inp"><input id="realLen" type="number" min="0.001" step="any" value="4.2"><em>m</em></span>
+        </div>
+        <div class="row">
+          <label for="upAxis">Up axis in the file</label>
+          <select id="upAxis"><option value="y">Y up</option><option value="z">Z up</option><option value="-y">Y down (COLMAP)</option></select>
+        </div>
+        <div class="row">
+          <label for="yaw">Turn into the wind</label>
+          <span class="inp"><input id="yaw" type="number" step="15" value="0"><em>&deg;</em></span>
+        </div>
+        <div class="row">
+          <label for="res">Grid</label>
+          <select id="res">
+            <option value="24">Quick &middot; 24 cells long</option>
+            <option value="40" selected>Standard &middot; 40 cells long</option>
+            <option value="56">Fine &middot; 56 cells long</option>
+            <option value="72">Finest &middot; 72 cells long</option>
+          </select>
+        </div>
+        <div class="row check"><label><input type="checkbox" id="ground" checked> Sits on the ground (cars, buildings)</label></div>
+        <details class="more" id="splatOpts">
+          <summary>Splat cleanup</summary>
+          <div class="row"><label for="minOp">Ignore splats fainter than</label><span class="inp"><input id="minOp" type="number" min="0" max="1" step="0.05" value="0.35"></span></div>
+          <div class="row"><label for="closeGaps">Close gaps up to</label><span class="inp"><input id="closeGaps" type="number" min="0" max="4" step="1" value="1"><em>cells</em></span></div>
+          <div class="row"><label for="floater">Drop pieces smaller than</label><span class="inp"><input id="floater" type="number" min="0" max="50" step="1" value="5"><em>% of body</em></span></div>
+        </details>
+        <p class="info" id="fitInfo"></p>
+        <button type="button" class="primary" id="buildBtn" disabled>Build the solid</button>
+      </li>
+
+      <li class="step" id="step3">
+        <h2>Turn on the wind</h2>
+        <div class="row">
+          <label for="speed">Wind speed</label>
+          <span class="inp"><input id="speed" type="number" min="1" max="120" step="1" value="30"><em>m/s</em></span>
+        </div>
+        <div class="row">
+          <label for="fluid">Fluid</label>
+          <select id="fluid"><option value="air">Air, 20 &deg;C</option><option value="water">Water, 20 &deg;C</option></select>
+        </div>
+        <div class="row">
+          <label for="slice">Slice position</label>
+          <input id="slice" type="range" min="0" max="1" step="0.01" value="0.5">
+        </div>
+        <div class="row check"><label><input type="checkbox" id="showSlice" checked> Speed slice</label><label><input type="checkbox" id="showSmoke" checked> Smoke</label></div>
+        <div class="btns">
+          <button type="button" class="primary" id="runBtn" disabled>Run</button>
+          <button type="button" id="resetBtn" disabled>Restart flow</button>
+        </div>
+        <p class="info" id="runInfo"></p>
+      </li>
+
+      <li class="step" id="step4">
+        <h2>Export</h2>
+        <div class="row">
+          <label for="expSrc">Geometry</label>
+          <select id="expSrc"><option value="solid">Cleaned watertight solid</option><option value="orig">Original mesh as loaded</option></select>
+        </div>
+        <div class="row">
+          <label for="expUnit">Units</label>
+          <select id="expUnit"><option value="mm">Millimeters</option><option value="m">Meters</option><option value="in">Inches</option></select>
+        </div>
+        <div class="row">
+          <label for="expScale">Model scale</label>
+          <select id="expScale"><option value="1">Full size</option><option value="0.1">1:10</option><option value="0.05">1:20</option><option value="0.025">1:40</option><option value="0.01">1:100</option></select>
+        </div>
+        <div class="row check"><label><input type="checkbox" id="zUp"> Z up (most CAD and slicers)</label></div>
+        <div class="formats" role="group" aria-label="Download geometry">
+          <button type="button" data-fmt="stl" disabled>STL</button>
+          <button type="button" data-fmt="3mf" disabled>3MF</button>
+          <button type="button" data-fmt="glb" disabled>GLB</button>
+          <button type="button" data-fmt="obj" disabled>OBJ</button>
+          <button type="button" data-fmt="ply" disabled>PLY</button>
+        </div>
+        <div class="formats" role="group" aria-label="Download data">
+          <button type="button" data-fmt="splat" disabled>Cleaned splats</button>
+          <button type="button" data-fmt="vtk" disabled>Flow field (ParaView)</button>
+          <button type="button" data-fmt="csv" disabled>Forces CSV</button>
+          <button type="button" data-fmt="zip" disabled>Everything (.zip)</button>
+        </div>
+        <p class="info" id="expInfo"></p>
+      </li>
+
+      <li class="step" id="step5">
+        <h2>Cloud jobs</h2>
+        <p class="info" id="cloudInfo">Photos to splats and OpenFOAM runs happen on your own AWS account. Not connected.</p>
+        <details class="more">
+          <summary>Connect</summary>
+          <div class="row"><label for="apiUrl">API address</label><input id="apiUrl" type="url" placeholder="https://abc123.execute-api.us-east-1.amazonaws.com"></div>
+          <div class="row"><label for="apiKey">Access key</label><input id="apiKey" type="password" autocomplete="off"></div>
+          <button type="button" id="cloudSave">Save and test</button>
+        </details>
+        <div class="cloud-actions">
+          <label class="drop small"><input type="file" id="photos" accept="image/*,video/*" multiple disabled><span class="drop-main">Photos or a video to splats</span><span class="drop-sub">30 to 200 photos walking around the object</span></label>
+          <button type="button" id="foamBtn" disabled>Run OpenFOAM on this solid</button>
+        </div>
+        <ul class="jobs" id="jobs"></ul>
+      </li>
+    </ol>
+    <p class="fine">Results are qualitative. The in-browser tunnel runs at far lower Reynolds numbers than the real flow, so use it to compare shapes, not to certify them. The OpenFOAM job gives better numbers.</p>
+  </aside>
+</main>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

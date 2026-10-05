@@ -1,0 +1,7 @@
+node_modules/
+web/out/
+web/node_modules/
+aws/.api-key.*
+aws/.packaged.yaml
+__pycache__/
+.DS_Store

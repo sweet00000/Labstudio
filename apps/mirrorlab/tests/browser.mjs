@@ -1,0 +1,56 @@
+// Optional integration test. Install Playwright and Chromium as described in docs/VALIDATION.md.
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {projectFromJSON} from '../web/src/physics.js';
+const {chromium}=await import(process.env.MIRRORLAB_PLAYWRIGHT_MODULE||'playwright');
+const port=Number(process.env.MIRRORLAB_TEST_PORT||5183);
+const server=spawn(process.execPath,['scripts/serve.mjs',`--port=${port}`,'--root=.'],{stdio:['ignore','pipe','inherit']});
+await new Promise((ok,fail)=>{server.stdout.once('data',ok);server.once('error',fail);server.once('exit',code=>fail(new Error(`Server exited: ${code}`)));});
+let browser;
+try {
+  let executablePath=process.env.MIRRORLAB_CHROMIUM_EXECUTABLE,args=['--no-sandbox','--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'];
+  if(process.env.MIRRORLAB_CHROMIUM_HELPER){const helper=(await import(process.env.MIRRORLAB_CHROMIUM_HELPER)).default;executablePath=await helper.executablePath();args=helper.args;}
+  browser=await chromium.launch({headless:true,executablePath,args});
+  const page=await browser.newPage({viewport:{width:1512,height:1000},deviceScaleFactor:1});
+  const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
+  const wait=()=>page.waitForFunction(()=>window.mirrorlab?.result&&!window.mirrorlab.pending);
+  await page.goto(`http://127.0.0.1:${port}/web/`);await wait();
+  assert.equal(await page.locator('#renderError').isVisible(),false,'WebGL renderer must initialize');
+  assert.equal(await page.locator('#coverageMetric').textContent(),'9 / 9');
+  const start=await page.evaluate(()=>window.mirrorlab.result.rms);
+  await page.locator('#radius').fill('120');await page.locator('#radius').press('Tab');await wait();
+  assert.notEqual(await page.evaluate(()=>window.mirrorlab.result.rms),start);
+  await page.selectOption('#preset','collimator');await wait();assert.ok(await page.evaluate(()=>window.mirrorlab.result.rms<1e-8));
+  await page.selectOption('#preset','flat');await wait();assert.equal(await page.locator('#focusMetric').textContent(),'∞');
+  await page.selectOption('#preset','birdbath');await wait();
+  await page.locator('[data-tab="eyebox"]').click();await page.locator('#eyeboxCanvas').click({position:{x:150,y:100}});await wait();
+  await page.locator('[data-camera="side"]').click();await page.locator('#showNormals').check();await page.locator('#showNormals').uncheck();
+  await page.selectOption('#samples','256');await wait();await page.locator('[data-tab="sweep"]').click();await page.locator('#sweepBtn').click();
+  await page.waitForFunction(()=>window.mirrorlab.sweep?.cells.length===169,{},{timeout:90000});
+  assert.ok(await page.evaluate(()=>window.mirrorlab.sweep.best));
+  await page.locator('#applyBestBtn').click();await wait();
+  const expected=await page.evaluate(()=>window.mirrorlab.parameters.radius);
+  const downloadEvent=page.waitForEvent('download');await page.locator('#saveBtn').click();const download=await downloadEvent;
+  await mkdir('test-results',{recursive:true});const path=resolve('test-results/exported-project.json');await download.saveAs(path);
+  assert.equal(projectFromJSON(await readFile(path,'utf8')).radius,expected);
+  const csvEvent=page.waitForEvent('download');await page.locator('#csvBtn').click();const csv=await csvEvent;await csv.saveAs(resolve('test-results/sweep.csv'));
+  assert.equal((await readFile('test-results/sweep.csv','utf8')).trim().split('\n').length,171);
+  await page.selectOption('#preset','birdbath');await wait();
+  await page.locator('#projectFile').setInputFiles(path);await wait();assert.equal(await page.evaluate(()=>window.mirrorlab.parameters.radius),expected);
+  await writeFile('test-results/invalid.json','{"schema":"other"}');await page.locator('#projectFile').setInputFiles(resolve('test-results/invalid.json'));await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('Expected a Mirrorlab'));
+  assert.equal(await page.evaluate(()=>window.mirrorlab.parameters.radius),expected);
+  await page.selectOption('#preset','birdbath');await wait();await page.locator('[data-tab="footprint"]').click();await page.locator('[data-camera="perspective"]').click();
+  await page.locator('#guideBtn').click();assert.ok(await page.locator('#guideDialog').isVisible());await page.locator('#guideDialog .dialog-close').click();
+  await page.locator('#toast').waitFor({state:'hidden'});
+  await page.screenshot({path:'test-results/desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.selectOption('#quickPreset','collimator');await wait();assert.ok(await page.evaluate(()=>window.mirrorlab.result.rms<1e-8));
+  await page.selectOption('#quickPreset','birdbath');await wait();
+  await page.screenshot({path:'test-results/mobile.png',fullPage:true});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'Mobile page must not overflow horizontally');
+  assert.equal(errors.length,0,errors.join('\n'));
+  assert.ok(requests.every(url=>url.startsWith(`http://127.0.0.1:${port}/`)||url.startsWith('blob:')),'App must make no external requests');
+  console.log('Browser checks passed: WebGL, live physics, presets, sweep, best candidate, project round trip, rejected import, CSV, desktop, mobile, no external requests.');
+}finally{await browser?.close();server.kill();}

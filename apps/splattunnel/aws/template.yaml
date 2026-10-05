@@ -1,0 +1,403 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Splat Tunnel cloud jobs. Photos to Gaussian splats on spot GPUs (nerfstudio/gsplat)
+  and OpenFOAM wind-tunnel runs on spot CPUs, behind a small HTTP API, with a hard
+  monthly budget cap that pauses and terminates jobs.
+
+Parameters:
+  ApiKey:
+    Type: String
+    NoEcho: true
+    MinLength: 24
+    Description: Shared access key the web app sends in the x-api-key header (deploy.sh generates one).
+  AlertEmail:
+    Type: String
+    Description: Budget alerts go here. Confirm the subscription email AWS sends you.
+  MonthlyBudget:
+    Type: Number
+    Default: 100
+    Description: USD per month of gross usage (credits are NOT subtracted). At 95% all jobs stop.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets (the default VPC's are fine). No NAT gateway is used, which saves about $32/month.
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: Origin allowed to call the API and upload to S3, e.g. https://webelves.us
+  GpuMaxVcpus:
+    Type: Number
+    Default: 8
+    Description: Cap on GPU fleet size. 8 vCPUs = at most two g4dn.xlarge at once.
+  CpuMaxVcpus:
+    Type: Number
+    Default: 16
+    Description: Cap on CPU fleet size. 16 vCPUs = at most two 8-vCPU OpenFOAM machines at once.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 29
+    MemorySize: 256
+    Architectures: [arm64]
+
+Resources:
+  # ---------------------------------------------------------------- storage
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, PUT, HEAD]
+            AllowedOrigins: [!Ref AllowedOrigin]
+            AllowedHeaders: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-inputs, Status: Enabled, Prefix: inputs/, ExpirationInDays: 7 }
+          - { Id: expire-outputs, Status: Enabled, Prefix: outputs/, ExpirationInDays: 30 }
+          - { Id: expire-jobs, Status: Enabled, Prefix: jobs/, ExpirationInDays: 30 }
+          - { Id: abort-uploads, Status: Enabled, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }
+
+  SplatRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
+  FoamRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":2},"action":{"type":"expire"}}]}'
+
+  # ---------------------------------------------------------------- image build (runs once per deploy)
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: build
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: '*'
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub '${DataBucket.Arn}/code/*'
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:CompleteLayerUpload, ecr:InitiateLayerUpload, ecr:PutImage, ecr:UploadLayerPart, ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]
+                Resource: [!GetAtt SplatRepo.Arn, !GetAtt FoamRepo.Arn]
+
+  ImageBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 90
+      Artifacts: { Type: NO_ARTIFACTS }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - { Name: SPLAT_REPO, Value: !GetAtt SplatRepo.RepositoryUri }
+          - { Name: FOAM_REPO, Value: !GetAtt FoamRepo.RepositoryUri }
+          - { Name: REGISTRY, Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com' }
+      Source:
+        Type: S3
+        Location: !Sub '${DataBucket}/code/containers.zip'
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY
+            build:
+              commands:
+                - docker build -t $FOAM_REPO:latest foam
+                - docker push $FOAM_REPO:latest
+                - docker build -t $SPLAT_REPO:latest splat
+                - docker push $SPLAT_REPO:latest
+
+  # ---------------------------------------------------------------- batch
+  BatchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Splat Tunnel batch workers (outbound only)
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - { IpProtocol: '-1', CidrIp: 0.0.0.0/0 }
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  JobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: ecs-tasks.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: data
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub '${DataBucket.Arn}/inputs/*'
+              - Effect: Allow
+                Action: [s3:PutObject]
+                Resource: !Sub '${DataBucket.Arn}/outputs/*'
+              - Effect: Allow
+                Action: [s3:ListBucket]
+                Resource: !GetAtt DataBucket.Arn
+
+  # bigger root disk: the nerfstudio image is large
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs: { VolumeSize: 100, VolumeType: gp3, DeleteOnTermination: true }
+
+  GpuCompute:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: SPOT
+        AllocationStrategy: SPOT_PRICE_CAPACITY_OPTIMIZED
+        MinvCpus: 0
+        MaxvCpus: !Ref GpuMaxVcpus
+        InstanceTypes: [g4dn.xlarge, g5.xlarge, g6.xlarge]
+        Subnets: !Ref SubnetIds
+        SecurityGroupIds: [!Ref BatchSecurityGroup]
+        InstanceRole: !GetAtt InstanceProfile.Arn
+        LaunchTemplate: { LaunchTemplateId: !Ref WorkerLaunchTemplate, Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber }
+        Ec2Configuration:
+          - ImageType: ECS_AL2023_NVIDIA
+        Tags: { Project: splattunnel }
+
+  CpuCompute:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: SPOT
+        AllocationStrategy: SPOT_PRICE_CAPACITY_OPTIMIZED
+        MinvCpus: 0
+        MaxvCpus: !Ref CpuMaxVcpus
+        InstanceTypes: [c7i.2xlarge, c6i.2xlarge, c7a.2xlarge, m7i.2xlarge]
+        Subnets: !Ref SubnetIds
+        SecurityGroupIds: [!Ref BatchSecurityGroup]
+        InstanceRole: !GetAtt InstanceProfile.Arn
+        LaunchTemplate: { LaunchTemplateId: !Ref WorkerLaunchTemplate, Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber }
+        Ec2Configuration:
+          - ImageType: ECS_AL2023
+        Tags: { Project: splattunnel }
+
+  GpuQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder: [{ Order: 1, ComputeEnvironment: !Ref GpuCompute }]
+  CpuQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder: [{ Order: 1, ComputeEnvironment: !Ref CpuCompute }]
+
+  SplatJob:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities: [EC2]
+      Timeout: { AttemptDurationSeconds: 7200 }
+      RetryStrategy:
+        Attempts: 3
+        EvaluateOnExit:
+          - { OnStatusReason: 'Host EC2*', Action: RETRY }
+          - { OnReason: '*', Action: EXIT }
+      ContainerProperties:
+        Image: !Sub '${SplatRepo.RepositoryUri}:latest'
+        JobRoleArn: !GetAtt JobRole.Arn
+        ResourceRequirements:
+          - { Type: VCPU, Value: '4' }
+          - { Type: MEMORY, Value: '14500' }
+          - { Type: GPU, Value: '1' }
+        LinuxParameters: { SharedMemorySize: 8192 }
+
+  FoamJob:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities: [EC2]
+      Timeout: { AttemptDurationSeconds: 10800 }
+      RetryStrategy:
+        Attempts: 3
+        EvaluateOnExit:
+          - { OnStatusReason: 'Host EC2*', Action: RETRY }
+          - { OnReason: '*', Action: EXIT }
+      ContainerProperties:
+        Image: !Sub '${FoamRepo.RepositoryUri}:latest'
+        JobRoleArn: !GetAtt JobRole.Arn
+        ResourceRequirements:
+          - { Type: VCPU, Value: '8' }
+          - { Type: MEMORY, Value: '14500' }
+        LinuxParameters: { SharedMemorySize: 2048 }
+
+  # ---------------------------------------------------------------- API
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowHeaders: [content-type, x-api-key]
+        AllowMethods: [GET, POST, OPTIONS]
+        MaxAge: 3600
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: api/
+      Handler: app.handler
+      Environment:
+        Variables:
+          BUCKET: !Ref DataBucket
+          API_KEY: !Ref ApiKey
+          GPU_QUEUE: !Ref GpuQueue
+          CPU_QUEUE: !Ref CpuQueue
+          SPLAT_JOBDEF: !Ref SplatJob
+          FOAM_JOBDEF: !Ref FoamJob
+          BUDGET_NAME: !Ref Budget
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref DataBucket }
+        - Statement:
+            - Effect: Allow
+              Action: [batch:SubmitJob]
+              Resource: [!Ref GpuQueue, !Ref CpuQueue, !Ref SplatJob, !Ref FoamJob]
+            - Effect: Allow
+              Action: [batch:DescribeJobs, batch:DescribeJobQueues, batch:ListJobs]
+              Resource: '*'
+            - Effect: Allow
+              Action: [budgets:ViewBudget]
+              Resource: '*'
+      Events:
+        All:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: '/{proxy+}', Method: ANY }
+
+  # ---------------------------------------------------------------- hard budget cap
+  BudgetTopic:
+    Type: AWS::SNS::Topic
+  BudgetTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref BudgetTopic]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: budgets.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref BudgetTopic
+            Condition: { StringEquals: { 'aws:SourceAccount': !Ref AWS::AccountId } }
+
+  GuardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: api/
+      Handler: app.budget_guard
+      Timeout: 60
+      Environment:
+        Variables:
+          GPU_QUEUE: !Ref GpuQueue
+          CPU_QUEUE: !Ref CpuQueue
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [batch:UpdateJobQueue, batch:ListJobs, batch:TerminateJob]
+              Resource: '*'
+      Events:
+        Alarm:
+          Type: SNS
+          Properties: { Topic: !Ref BudgetTopic }
+
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudget, Unit: USD }
+        # count gross usage: with promotional credits the net cost stays $0 and the cap would never fire
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+          IncludeDiscount: true
+          IncludeTax: true
+          IncludeSupport: true
+          IncludeOtherSubscription: true
+          IncludeRecurring: true
+          IncludeUpfront: true
+          IncludeSubscription: true
+          UseBlended: false
+          UseAmortized: false
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 50, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 95, ThresholdType: PERCENTAGE }
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+            - { SubscriptionType: SNS, Address: !Ref BudgetTopic }
+
+Outputs:
+  ApiUrl:
+    Description: Paste into the web app's Cloud jobs > Connect > API address
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+  BucketName:
+    Value: !Ref DataBucket
+  ImageBuildProject:
+    Value: !Ref ImageBuild
+  GpuQueueName:
+    Value: !Ref GpuQueue
+  CpuQueueName:
+    Value: !Ref CpuQueue

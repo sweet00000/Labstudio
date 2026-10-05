@@ -1,0 +1,30 @@
+# Runs every module's fast checks on pushes and pull requests.
+name: ci
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  mirrorlab:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/mirrorlab } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm test
+      - run: npm run build
+  splattunnel:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/splattunnel } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install "moto[s3]" boto3
+      - name: Exporters and mesher (no GPU needed)
+        working-directory: apps/splattunnel/web
+        run: mkdir -p out && deno run -A test/export_test.js
+      - name: API Lambda
+        run: python aws/tests/test_api.py

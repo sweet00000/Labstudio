@@ -1,0 +1,29 @@
+{
+  "schema": "mirrorlab.project",
+  "schemaVersion": 1,
+  "units": "mm",
+  "solver": "mirrorlab-optics/0.1.0",
+  "parameters": {
+    "layout": "single",
+    "surface": "sphere",
+    "source": "parallel",
+    "radius": 100,
+    "aperture": 36,
+    "distance": 50,
+    "pitch": 0,
+    "yaw": 0,
+    "reflectivity": 0.92,
+    "cone": 24,
+    "width": 8,
+    "height": 4.5,
+    "beamRadius": 22,
+    "samples": 1024,
+    "splitterZ": 22,
+    "splitterSize": 46,
+    "splitterR": 0.5,
+    "detectorZ": 50,
+    "pupil": 5,
+    "eyeX": 0,
+    "eyeY": 0
+  }
+}
