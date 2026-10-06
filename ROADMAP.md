@@ -2,55 +2,47 @@
 
 Status as of **5 October 2026** · Alexander Sweet
 
-## Where things stand
+## The goal
 
-Two working apps, side by side, sharing nothing yet.
+One browser studio where a physical object goes **scan → CAD → model → print or analysis** without leaving the page. Analysis currently means optics ray tracing and the wind tunnel; fluid mechanics, structures and Monte Carlo particle transport (OpenMC) come later. Every workspace reads the same geometry in millimetres, Z up, and every solver gets its own form of it: rays use exact surfaces, the wind tunnel uses voxels, OpenFOAM uses a surface mesh, and OpenMC will use CSG or a DAGMC mesh.
 
-| | Mirrorlab | Splat Tunnel |
+## Where each stage stands
+
+| Stage | Works today | Missing |
 |---|---|---|
-| Physics | Geometric optics, specular reflection, Float64 CPU in a Web Worker | D3Q19 LBM + Smagorinsky LES, WebGPU compute, f16 storage |
-| Geometry | Analytic surfaces (exact) | Scans / meshes → voxels → watertight mesh |
-| Renderer | Three.js r180, WebGL 2 | Hand-written WebGPU |
-| Project file | Versioned JSON, mm and degrees | None (session only) |
-| CAD | None | Mesh export only (STL, 3MF, GLB, OBJ, PLY, VTK) |
-| Backend | None | Optional AWS: OpenFOAM + photo-to-splat jobs behind a budget cap |
-| Tests in CI | 20 physics tests + static build | Mesher/exporter round trips + API Lambda (GPU solver tests need a GPU, run locally) |
+| **Capture** | Import `.ply` (Gaussian splats, meshes, points), `.splat`, `.stl`, `.obj`, `.glb`. Photos/video → splats as an optional AWS job in Splat Tunnel | Capture flow inside the studio; scale from a known distance |
+| **Scan → solid** | Closed meshes kept exactly; open meshes, splats and points rebuilt as a closed solid on a voxel grid; units and up axis chosen at import | Crop box, pick-the-floor alignment, two-point scale calibration, recording the reconstruction's uncertainty |
+| **Model (CAD)** | Feature list on the Manifold kernel: box, cylinder/cone, sphere, imported mesh; add / cut / intersect; position and rotation; part vs reference roles; undo/redo; autosave; project files | Click-to-select and drag handles in the viewport, sketch → extrude/revolve, named parameters, mirror and pattern, measuring, section view, fillets and STEP (needs a B-rep kernel) |
+| **Print** | STL, 3MF (mm), OBJ, GLB; placed on the bed; volume and mass by material | Build-volume fit, minimum wall thickness, overhang map, orientation suggestion, hand-off to a slicer |
+| **Optics** | Mirrorlab birdbath by default; housing in CAD rebuilt from the current optics design | Ray tracing against the housing (vignetting), refraction and general surfaces (Mirrorlab OPT-001 → OPT-005) |
+| **Wind tunnel** | Hatchback by default; any CAD part sent in with one click | Drag/lift and surface pressure coming back into the Model tab; sweeps over a parameter |
+| **Other physics** | (none) | Fluid mechanics beyond the tunnel, structural/thermal FEA, OpenMC |
 
-Not started: CAD kernel, general fluid mechanics beyond the wind tunnel, OpenMC / particle transport, a shared shell app, accounts.
+## What's next, in order
 
-Mirrorlab's own deeper plan (M0–M5) and issue-sized backlog are in [`apps/mirrorlab/PROJECT_PLAN.md`](apps/mirrorlab/PROJECT_PLAN.md) and [`apps/mirrorlab/docs/BACKLOG.md`](apps/mirrorlab/docs/BACKLOG.md). This file sequences the whole studio and reuses those IDs.
+Each step leaves the studio usable and adds one complete capability.
 
-## The one idea that holds it together
+1. **Pick and place in the viewport.** Click a body to select its feature; drag handles to move and rotate; snap to the grid and to faces. This is the biggest usability gap right now.
+2. **Sketch → extrude / revolve.** 2D polygon and circle sketches on a plane, extruded or revolved (Manifold's `CrossSection`), so the studio can model brackets and mounts, not just boxes.
+3. **Named parameters.** `wall = 3`, `mirror_d = optics.aperture`; features reference them, and the birdbath template becomes formulas instead of numbers baked in at generation time.
+4. **Scan clean-up.** Crop box, floor alignment, two-point scale calibration. Together with steps 1 and 2 this completes scan → CAD → print for a real object (for example a mount fitted to a scanned part).
+5. **Printability report.** Fits the build volume, thinnest wall, overhangs over 45°, estimated print mass and time per material.
+6. **Results back into the model.** The wind tunnel sends drag, lift and a per-face pressure map back; the Model tab colours the part with it. Optics traces the housing as an obstruction.
+7. **One project file.** CAD features, optics parameters and solver settings and results in one `labstudio.project`, replacing today's separate saves.
+8. **B-rep kernel next to Manifold.** Replicad / OpenCascade.js in a worker, for fillets, chamfers, exact cylinders and STEP in/out. Manifold stays for scans and mesh booleans; parts move between the two as meshes.
+9. **Generic cloud job service.** Turn Splat Tunnel's AWS stack into one queue any workspace can use (OpenFOAM first), with the budget cap kept.
+10. **New physics, each behind a benchmark:** general LBM flow (Poiseuille, lid-driven cavity, cylinder at Re 100), structural FEA, and OpenMC as a container job (Godiva k-eff within about 0.5% of 1.0).
 
-Every module reads the same **project snapshot**: objects with stable IDs, units, transforms, and an authoritative geometry source (analytic surface, CAD solid, or scan). Each solver derives its own representation from that: rays need exact surfaces, the LBM needs voxels, OpenFOAM needs a surface mesh, OpenMC needs CSG or a DAGMC mesh. Solvers never edit geometry; they return results tied to a geometry hash.
+## Decisions made
 
-Build that spine first. Without it, every new simulator is another island.
+- **License:** GPL-3.0-or-later for the whole repository. Bundled Three.js (MIT) and Manifold (Apache-2.0) are compatible. OpenCascade (LGPL-2.1), OpenMC (MIT) and OpenFOAM (GPL-3.0) are all compatible too.
+- **Workspace convention:** millimetres, Z up, right-handed. Mirrorlab's optics frame (Y up, optical axis +Z) maps to it as (x, y, z) → (x, −z, y).
+- **CAD kernel:** Manifold first, because scans are meshes and its booleans stay watertight. A B-rep kernel joins later for precise parametric parts (step 8).
+- **Integration:** each app still runs on its own; the studio hosts Optics and Wind tunnel in same-origin frames and passes meshes with `postMessage`. Shared code lives in `packages/`.
 
-## Phases
+## Open questions
 
-| # | Phase | Delivers | Done when | Backlog IDs |
-|---|---|---|---|---|
-| 0 | Monorepo | Both apps in one repo, one CI, one Pages site | CI green on `main`; hub page live | (this commit) |
-| 1 | Shared core | `packages/core`: project snapshot schema with units and frames, migration from Mirrorlab v1 JSON, solver job contract | Mirrorlab's four example projects migrate and still pass every test | CAD-001 |
-| 2 | Shared geometry I/O | `packages/geometry`: Splat Tunnel's loaders, mesher and exporters moved out of the app, used by both | Golden cube/sphere fixtures round-trip with known size, axes and units | DATA-001, DATA-002 |
-| 3 | Studio shell | `apps/studio`: one page, one Three.js viewport (WebGPURenderer with WebGL fallback), module panels for optics and wind tunnel | Load one project, view it, run a trace and a tunnel run without leaving the page | CAD-003 |
-| 4 | CAD | Replicad / OpenCascade.js in a worker: sketch, extrude, fillet, booleans, STEP import/export | A parametric mirror mount regenerates from the mirror radius and drops straight into the wind tunnel | CAD-002, CAD-004 |
-| 5 | Ray tracing v2 | Surface sequences, refraction, TIR, conics/aspheres, prescription import | Matches an independent solver (Optiland) on one documented prescription | OPT-001 → OPT-005 |
-| 6 | Fluid mechanics | Generalize the LBM beyond the tunnel: channels, internal flow, 2D mode; validation suite (Poiseuille, lid-driven cavity, cylinder Re 100 Strouhal) | Each benchmark within a stated tolerance, run in CI on a software GPU | FLOW-001 |
-| 7 | Generic job service | Turn Splat Tunnel's AWS stack into a job runner any module can use (one queue, typed jobs, cancel, provenance) | OpenFOAM job goes through the generic API; budget guard still enforced | WEB-002, FLOW-002 |
-| 8 | OpenMC | `openmc` container job: geometry from CAD as DAGMC (or CSG), materials, k-eff and mesh tallies back as VTK, plotted in the studio | Godiva (bare HEU sphere) k-eff within ~0.5% of 1.0 | new: NUC-001 |
-| 9 | Collaboration and world scale | Accounts, shared snapshots, georeferenced frames | Per Mirrorlab M4–M5 gates | WEB-001, WORLD-* |
+- **"MCMP":** this plan reads it as OpenMC (Monte Carlo particle transport). If you meant multi-component multiphase flow (Shan–Chen LBM), it becomes an extension of the wind tunnel solver in step 10 instead.
+- **Printer:** which printer and slicer you use decides the build volume and the hand-off format for step 5.
 
-Phases 5 and 6 can run in parallel once 1–3 exist. OpenMC comes after the job service because it does not run in a browser; it is a Python/C++ code that belongs in a container next to OpenFOAM.
-
-## Next three tasks
-
-1. **Project snapshot schema** (`packages/core`). Units, frames, object IDs, asset references, the `SolverRequest`/`SolverResult` types already sketched in `apps/mirrorlab/docs/ARCHITECTURE.md`. Write the Mirrorlab v1 → v2 migration and keep the four example projects as fixtures.
-2. **Lift Splat Tunnel's geometry modules** (`loaders.js`, `mesher.js`, `export.js`, `voxelize.js`) into `packages/geometry` with no app globals, plus golden fixtures. Splat Tunnel imports them back; its export test must still pass.
-3. **Studio shell skeleton**. One page, one viewport, a module switcher, loading a project snapshot. Mirrorlab's physics worker plugs in first because it has no renderer dependency.
-
-## Decisions to make
-
-- **License.** The repo root is GPL-3.0; both apps are MIT. Mixing is legal (MIT code can live in a GPL project) but confusing. OpenMC is MIT, OpenCascade is LGPL-2.1, OpenFOAM is GPL-3.0 but only runs inside your own container, so none of them forces GPL on the web code. Pick one license for the whole repo.
-- **Renderer.** Recommend Three.js everywhere (it has a WebGPU renderer now) and keeping Splat Tunnel's raw WebGPU only for the solver and field visualization.
-- **"MCMP".** If this means multi-component multiphase LBM (Shan–Chen) rather than OpenMC, it belongs in phase 6 as an extension of `lbm.js`, not in phase 8.
+Mirrorlab's own optics plan and issue-sized backlog are in [`apps/mirrorlab/PROJECT_PLAN.md`](apps/mirrorlab/PROJECT_PLAN.md) and [`apps/mirrorlab/docs/BACKLOG.md`](apps/mirrorlab/docs/BACKLOG.md).

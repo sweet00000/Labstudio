@@ -1,45 +1,79 @@
 # LabStudio
 
-One browser codebase for engineering simulation: optics ray tracing, wind tunnel and fluid mechanics, particle transport, all around a shared CAD and project model.
+Scan it, model it, then print it or test it, all in the browser.
 
-Each module is a static web app today. They are being pulled together behind one project format, one unit system and one geometry pipeline. See [ROADMAP.md](ROADMAP.md) for the plan.
+LabStudio is one web codebase for engineering work: a CAD workspace, optics ray tracing, and a GPU wind tunnel that share the same geometry, units and files. Everything runs locally in your browser. Heavy jobs (OpenFOAM, photo-to-3D) can optionally go to your own AWS account.
 
-## Modules
+![LabStudio model workspace with the birdbath housing](docs/images/studio-birdbath.png)
 
-| Module | Path | What it does | Runs on | Status |
-|---|---|---|---|---|
-| Mirrorlab | [`apps/mirrorlab`](apps/mirrorlab) | Mirror optics: exact 3D ray tracing on plane, spherical and parabolic surfaces; pupil, eyebox, parameter sweeps | WebGL 2, Float64 worker | v0.1, 20 physics tests |
-| Splat Tunnel | [`apps/splattunnel`](apps/splattunnel) | Scans or meshes into a D3Q19 lattice-Boltzmann wind tunnel; CAD export; optional OpenFOAM and splat jobs on AWS | WebGPU | Working; exporter and API tests in CI |
-| CAD workspace | planned | Parametric solids, STEP in/out, shared by every solver | | Not started |
-| Particle transport (OpenMC) | planned | Monte Carlo neutron/photon transport as a cloud job, CAD geometry in, tallies back | | Not started |
+## Run it
 
-## Run locally
+Requires Node.js 22 or newer. Nothing to install.
 
 ```sh
-# Mirrorlab (Node 22+)
-cd apps/mirrorlab && npm run dev              # http://localhost:5173
-npm test
-
-# Splat Tunnel (needs a WebGPU browser)
-cd apps/splattunnel/web && python3 -m http.server 8000
-deno run -A test/export_test.js               # mesher + exporters
-python3 ../aws/tests/test_api.py              # needs: pip install "moto[s3]" boto3
+npm run dev      # then open http://localhost:5173
+npm test         # CAD, optics, band-gap physics, research helpers (41 tests)
+npm run build    # static site in _site/
 ```
+
+The wind tunnel needs WebGPU (current Chrome or Edge, Safari 26). The Model and Optics workspaces need WebGL 2.
+
+## Workspaces
+
+| Tab | What it does | Default |
+|---|---|---|
+| **Model** | Parametric CAD on the [Manifold](https://github.com/elalish/manifold) kernel: boxes, cylinders, cones, spheres and imported meshes combined with add, cut and intersect; position and rotation; undo; reference bodies; volume, area and mass; STL, 3MF, OBJ and GLB export; send to the wind tunnel | A printable **birdbath housing** sized from the current optics design |
+| **Optics** | Mirrorlab: exact 3D ray tracing through a birdbath (display, splitter, curved mirror, eye), pupil and eyebox analysis, parameter sweeps | The **birdbath** display |
+| **Wind tunnel** | Splat Tunnel: a D3Q19 lattice-Boltzmann wind tunnel in WebGPU with live drag and lift, smoke and a speed slice | The **hatchback** sample, ready to run |
+
+### The pipeline
+
+```
+scan (.ply splats, .stl, .obj, .glb, point cloud)
+   │  Import: units, up axis, scale; closed meshes kept exactly, anything else rebuilt as a solid
+   ▼
+Model (CAD) ──► Print: STL / 3MF placed on the bed, mass for your material
+   │   ▲
+   │   └── Optics: "Birdbath housing (from Optics)" rebuilds the housing around the current design
+   ▼
+Wind tunnel: "Send to wind tunnel" drops the part in and builds the solid
+```
+
+## For agents and automated testing
+
+[AGENTS.md](AGENTS.md) lists the commands and rules. `tools/agent/drive.mjs` drives the studio in Chromium from a JSON scenario and writes a report with screenshots; `tools/research/openalex.mjs` searches the literature. The first open brief is a [tunable band-gap Materials workspace](docs/agents/BANDGAP_BRIEF.md), with a ready-made acceptance test.
 
 ## Repository layout
 
 ```
-apps/mirrorlab/       optics ray tracer (own README, docs/, tests/)
-apps/splattunnel/     wind tunnel + scan-to-CAD, optional AWS backend in aws/
-site/                 hub page published at the root of GitHub Pages
-.github/workflows/    ci (all tests), pages (hub + apps), browser (manual), splattunnel-aws (inert until configured)
-ROADMAP.md            current state and what to build next
+apps/studio/          the studio shell and Model (CAD) workspace
+  web/src/cad.js        feature list → solids (Manifold), analysis, project files
+  web/src/templates.js  birdbath housing from optics parameters, hatchback sample
+  web/src/scan.js       scan or mesh → closed solid in mm, Z up
+  tests/                CAD tests (node --test) and a browser smoke test
+apps/mirrorlab/       optics ray tracer (own README, docs/, physics tests)
+apps/splattunnel/     wind tunnel and scan-to-CAD, optional AWS backend in aws/
+packages/geometry/    shared loaders, voxel tools, mesher, exporters, sample shapes
+packages/physics/     band-gap and optoelectronics reference kernel (tested)
+packages/vendor/      Manifold geometry kernel (WASM)
+tools/agent/          browser driver and scenarios for agents
+tools/research/       OpenAlex literature search and query plans
+scripts/              dev server and site build
+.github/workflows/    ci, pages, browser (manual), splattunnel-aws (inert until configured)
+ROADMAP.md            where things stand and what to build next
 ```
 
 ## Publish on GitHub Pages
 
-Settings → Pages → Source: **GitHub Actions**, then run the **pages** workflow from Actions. To redeploy on every push to `main`, add the repository variable `ENABLE_GITHUB_PAGES = true`. The site serves the hub at `/`, Mirrorlab at `/mirrorlab/` and Splat Tunnel at `/splattunnel/`.
+The site is plain static files that use relative paths, so it works at `https://<user>.github.io/Labstudio/`. You can serve it either of two ways (Settings → Pages → Build and deployment → Source):
+
+- **Deploy from a branch** (`main`, `/ (root)`). Nothing else to set up: every push to `main` republishes the repository as it is. The root `index.html` opens the studio, and `.nojekyll` turns off Jekyll.
+- **GitHub Actions** (recommended once you're editing often). The `pages` workflow runs the tests first and publishes only the app files (`npm run build` → `_site/`). Run it from the Actions tab, or add the repository variable `ENABLE_GITHUB_PAGES = true` to deploy on every push to `main`.
+
+The wind tunnel needs a browser with WebGPU; the Model and Optics tabs work in any current browser.
 
 ## License
 
-The repository root carries GPL-3.0. Mirrorlab and Splat Tunnel were written under MIT and keep their own `LICENSE` files. See the license note in [ROADMAP.md](ROADMAP.md) before adding dependencies.
+Copyright © 2026 Alexander Sweet. LabStudio is free software under the GNU General Public License, version 3 or (at your option) any later version. See [LICENSE](LICENSE).
+
+Bundled third-party code keeps its own license, all compatible with GPL-3.0: Three.js (MIT, `apps/mirrorlab/web/vendor/three/LICENSE`) and Manifold (Apache-2.0, `packages/vendor/manifold/LICENSE`).

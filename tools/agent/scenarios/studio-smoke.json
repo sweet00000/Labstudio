@@ -1,0 +1,125 @@
+{
+  "name": "studio-smoke",
+  "start": "/",
+  "viewport": [
+    1440,
+    900
+  ],
+  "steps": [
+    {
+      "do": "waitFor",
+      "js": "window.__labstudio?.result?.part",
+      "note": "CAD kernel booted and the default model evaluated"
+    },
+    {
+      "do": "expect",
+      "js": "window.__labstudio.doc.features.some(f => f.group === 'birdbath')",
+      "truthy": true,
+      "note": "default model is the birdbath housing"
+    },
+    {
+      "do": "eval",
+      "js": "window.__labstudio.result.part.volume()",
+      "save": "v0"
+    },
+    {
+      "do": "expect",
+      "js": "saved.v0",
+      "min": 10000,
+      "max": 100000,
+      "note": "housing volume in mm³ is plausible"
+    },
+    {
+      "do": "screenshot",
+      "name": "birdbath"
+    },
+    {
+      "do": "click",
+      "sel": "#tree li:not(.group) >> nth=0",
+      "note": "select the outer Housing box"
+    },
+    {
+      "do": "fill",
+      "sel": "#props input[type=number] >> nth=0",
+      "value": "80"
+    },
+    {
+      "do": "waitFor",
+      "js": "window.__labstudio.result.part.volume() > saved.v0 * 1.2"
+    },
+    {
+      "do": "click",
+      "sel": "#undoBtn"
+    },
+    {
+      "do": "waitFor",
+      "js": "Math.abs(window.__labstudio.result.part.volume() - saved.v0) < 1e-6",
+      "note": "undo restores the exact solid"
+    },
+    {
+      "do": "upload",
+      "sel": "#scanFile",
+      "file": "tools/agent/fixtures/cube-10mm.stl"
+    },
+    {
+      "do": "waitFor",
+      "sel": "#importPanel:not([hidden])"
+    },
+    {
+      "do": "click",
+      "sel": "#impGo"
+    },
+    {
+      "do": "waitFor",
+      "js": "window.__labstudio.doc.features.some(f => f.type === 'mesh')"
+    },
+    {
+      "do": "download",
+      "sel": "[data-export=stl]",
+      "expectName": "\\.stl$"
+    },
+    {
+      "do": "tab",
+      "name": "optics",
+      "settle": 500
+    },
+    {
+      "do": "waitFor",
+      "frame": "optics",
+      "js": "window.mirrorlab?.result && !window.mirrorlab.pending"
+    },
+    {
+      "do": "expect",
+      "frame": "optics",
+      "js": "window.mirrorlab.parameters.layout",
+      "equals": "birdbath"
+    },
+    {
+      "do": "expect",
+      "frame": "optics",
+      "js": "window.mirrorlab.result.rms",
+      "min": 5,
+      "max": 30,
+      "note": "exit-bundle RMS in arcmin for the default birdbath (README: about 12.5)"
+    },
+    {
+      "do": "screenshot",
+      "name": "optics"
+    },
+    {
+      "do": "tab",
+      "name": "tunnel",
+      "settle": 1500
+    },
+    {
+      "do": "waitFor",
+      "frame": "tunnel",
+      "sel": "#status"
+    },
+    {
+      "do": "screenshot",
+      "name": "tunnel",
+      "note": "headless Chromium usually has no WebGPU; the page should say so rather than crash"
+    }
+  ]
+}

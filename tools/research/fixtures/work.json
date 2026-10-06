@@ -1,0 +1,60 @@
+{
+  "_note": "Synthetic test fixture shaped like an OpenAlex work record; the citation count is illustrative, not real data.",
+  "id": "https://openalex.org/W2006271366",
+  "doi": "https://doi.org/10.1063/1.1368156",
+  "display_name": "Band parameters for III–V compound semiconductors and their alloys",
+  "publication_year": 2001,
+  "cited_by_count": 6000,
+  "type": "article",
+  "authorships": [
+    {
+      "author": {
+        "display_name": "I. Vurgaftman"
+      }
+    },
+    {
+      "author": {
+        "display_name": "J. R. Meyer"
+      }
+    },
+    {
+      "author": {
+        "display_name": "L. R. Ram-Mohan"
+      }
+    }
+  ],
+  "primary_location": {
+    "source": {
+      "display_name": "Journal of Applied Physics"
+    }
+  },
+  "open_access": {
+    "oa_url": null
+  },
+  "abstract_inverted_index": {
+    "We": [
+      0
+    ],
+    "present": [
+      1
+    ],
+    "a": [
+      2
+    ],
+    "comprehensive": [
+      3
+    ],
+    "compilation": [
+      4
+    ],
+    "of": [
+      5
+    ],
+    "band": [
+      6
+    ],
+    "parameters": [
+      7
+    ]
+  }
+}

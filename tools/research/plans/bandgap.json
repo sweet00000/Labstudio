@@ -1,0 +1,28 @@
+{
+  "name": "bandgap",
+  "title": "Tunable band gaps: primary sources for the Materials workspace",
+  "note": "DOIs below were written from memory of the standard references; the doi lookups confirm or refute each one. Fix any that come back wrong before citing.",
+  "queries": [
+    { "topic": "Temperature: Varshni (1967)", "doi": "10.1016/0031-8914(67)90062-6" },
+    { "topic": "Parameters: III-V band parameters, Vurgaftman, Meyer & Ram-Mohan (2001)", "doi": "10.1063/1.1368156" },
+    { "topic": "Parameters: nitrogen-containing semiconductors (2003)", "doi": "10.1063/1.1600519" },
+    { "topic": "Temperature: silicon gap, Thurmond (1975)", "doi": "10.1149/1.2134410" },
+    { "topic": "Size: Brus, quantum dot excited state (1984)", "doi": "10.1063/1.447218" },
+    { "topic": "Size: CdSe sizing curve and extinction, Yu, Qu, Guo & Peng (2003)", "doi": "10.1021/cm034081k" },
+    { "topic": "Doping: Burstein, InSb absorption limit (1954)", "doi": "10.1103/PhysRev.93.632" },
+    { "topic": "Field: quantum-confined Stark effect, Miller et al. (1984)", "doi": "10.1103/PhysRevLett.53.2173" },
+    { "topic": "Field: bilayer graphene gap tuned by displacement field, Zhang et al. (2009)", "doi": "10.1038/nature08105" },
+    { "topic": "Layers: monolayer MoS2 direct gap, Mak et al. (2010)", "doi": "10.1103/PhysRevLett.105.136805" },
+    { "topic": "Composition: mixed-halide perovskites, Noh et al. (2013)", "doi": "10.1021/nl400349b" },
+    { "topic": "Absorption edge: Tauc (1966)", "doi": "10.1002/pssb.19660150224" },
+    { "topic": "Absorption tail: Urbach (1953)", "doi": "10.1103/PhysRev.92.1324" },
+    { "topic": "Efficiency limit: Shockley & Queisser (1961)", "doi": "10.1063/1.1736034" },
+    { "topic": "Photoelectric effect: Einstein (1905)", "doi": "10.1002/andp.19053220607" },
+    { "topic": "Search: band gap bowing in semiconductor alloys", "search": "band gap bowing parameter semiconductor alloys first principles", "n": 5, "sort": "cited" },
+    { "topic": "Search: strain engineering of band gaps", "search": "strain engineering band gap deformation potential semiconductor", "n": 5, "sort": "cited" },
+    { "topic": "Search: band gap renormalization in heavily doped semiconductors", "search": "band gap renormalization heavily doped semiconductor Burstein-Moss", "n": 5, "sort": "cited" },
+    { "topic": "Search: photodiode bandwidth, transit time and RC limits", "search": "photodiode frequency response transit time RC limited bandwidth", "n": 5, "sort": "cited" },
+    { "topic": "Search: intensity-modulated photocurrent spectroscopy", "search": "intensity modulated photocurrent spectroscopy frequency domain", "n": 5, "sort": "cited" },
+    { "topic": "Search: tunable band gap review, recent", "search": "tunable band gap review", "n": 8, "from": 2020, "type": "review", "sort": "cited" }
+  ]
+}

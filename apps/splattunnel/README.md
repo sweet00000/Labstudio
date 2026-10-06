@@ -13,8 +13,12 @@ The web app is static files with no build step. It works on GitHub Pages or any 
 ## Run it
 
 ```sh
-cd web
-python3 -m http.server 8000     # then open http://localhost:8000
+npm run dev        # from the repository root; then open http://localhost:5173/apps/splattunnel/web/
+```
+
+The geometry modules are shared with the rest of LabStudio in `packages/geometry/`, so serve the repository root rather than `web/` alone. Inside the studio, this app is the **Wind tunnel** tab, and the Model workspace can send parts straight into it. It loads the hatchback sample on start; add `?empty` to the URL to skip that.
+
+```
 ```
 
 It needs WebGPU: current Chrome or Edge on desktop or Android, or Safari 26 on iPhone, iPad and Mac. Firefox has WebGPU on Windows; Linux support varies.
@@ -85,15 +89,14 @@ From then on, merging to `main` runs the tests, publishes the site, and updates 
 ## Layout
 
 ```
-web/                    static app (GitHub Pages serves this folder)
+web/                    static app
   index.html style.css favicon.svg
   src/lbm.js            WebGPU lattice Boltzmann solver (D3Q19, LES, f16 storage)
-  src/voxelize.js       scans → voxels, floaters, hole closing, tunnel sizing
-  src/mesher.js         voxels → watertight mesh (surface nets + Taubin smoothing)
-  src/export.js         STL, 3MF, GLB, OBJ, PLY, splat PLY, VTK, CSV, zip
-  src/loaders.js        PLY (3DGS / mesh / points), .splat, STL, OBJ, GLB
+  src/voxelize.js       tunnel sizing and LBM cell flags (voxel tools from packages/geometry)
+  src/loaders.js mesher.js export.js samples.js
+                        re-exports of packages/geometry/, shared with the CAD workspace
   src/render.js         WebGPU view: body, speed slice, smoke tracers
-  src/main.js cloud.js samples.js
+  src/main.js cloud.js
   test/                 headless tests (Deno WebGPU): solver benchmarks, export round-trips
 aws/
   template.yaml         everything above (SAM / CloudFormation)
@@ -117,4 +120,4 @@ python3 aws/containers/foam/run_foam.py --local body.stl --out res --params '{"q
 
 ## Credits and licenses
 
-Splat Tunnel is MIT licensed (see `LICENSE`). The cloud containers are built in your account from upstream sources and aren't redistributed here: [nerfstudio](https://github.com/nerfstudio-project/nerfstudio) and [gsplat](https://github.com/nerfstudio-project/gsplat) (Apache-2.0), [COLMAP](https://colmap.github.io/) (BSD), and [OpenFOAM](https://www.openfoam.com/) (GPL-3.0). B612 typeface by Airbus, SIL Open Font License.
+Copyright © 2026 Alexander Sweet. Splat Tunnel is licensed under the GNU General Public License v3.0 or later; see [`LICENSE`](../../LICENSE) at the repository root. The cloud containers are built in your account from upstream sources and aren't redistributed here: [nerfstudio](https://github.com/nerfstudio-project/nerfstudio) and [gsplat](https://github.com/nerfstudio-project/gsplat) (Apache-2.0), [COLMAP](https://colmap.github.io/) (BSD), and [OpenFOAM](https://www.openfoam.com/) (GPL-3.0). B612 typeface by Airbus, SIL Open Font License.
