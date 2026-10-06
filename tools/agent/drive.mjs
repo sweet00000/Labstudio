@@ -68,7 +68,7 @@ if (!opt('url')) {
   await new Promise((ok, fail) => { server.stdout.once('data', ok); server.once('error', fail); server.once('exit', (c) => fail(new Error(`dev server exited (${c}); is port ${port} busy? try --port=`))); });
 }
 
-const report = { scenario: scenario.name, base, startedAt: new Date().toISOString(), steps: [], pageErrors: [], consoleErrors: [], failedRequests: [], screenshots: [], map: null, ok: true };
+const report = { scenario: scenario.name, base, startedAt: new Date().toISOString(), steps: [], pageErrors: [], consoleErrors: [], failedRequests: [], httpErrors: [], screenshots: [], map: null, ok: true };
 const saved = {};
 let browser;
 try {
@@ -83,6 +83,7 @@ try {
   page.on('pageerror', (e) => report.pageErrors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text()); });
   page.on('requestfailed', (r) => report.failedRequests.push(`${r.url()} (${r.failure()?.errorText})`));
+  page.on('response', (r) => { if (r.status() >= 400) report.httpErrors.push(`${r.status()} ${r.url()}`); });
   await page.goto(base + (scenario.start || '/'));
 
   const FRAMES = { optics: 'mirrorlab', tunnel: 'splattunnel', materials: 'apps/materials' };
@@ -182,6 +183,7 @@ try {
   await writeFile(resolve(out, 'report.json'), JSON.stringify(report, null, 2));
   if (report.map) console.log(report.map.map((m) => `  ${m.selector.padEnd(34)} ${m.tag}${m.type ? `[${m.type}]` : ''}  ${m.text}`).join('\n'));
   if (report.pageErrors.length) console.log(`page errors:\n  ${report.pageErrors.join('\n  ')}`);
+  if (report.httpErrors.length) console.log(`HTTP errors:\n  ${report.httpErrors.join('\n  ')}`);
   console.log(`${report.ok ? 'PASSED' : 'FAILED'}  report: ${resolve(out, 'report.json')}`);
   process.exitCode = report.ok ? 0 : 1;
 }

@@ -65,7 +65,12 @@ ROADMAP.md            where things stand and what to build next
 
 ## Publish on GitHub Pages
 
-Settings → Pages → Source: **GitHub Actions**, then run the **pages** workflow from the Actions tab. To redeploy on every push to `main`, add the repository variable `ENABLE_GITHUB_PAGES = true`.
+The site is plain static files that use relative paths, so it works at `https://<user>.github.io/Labstudio/`. You can serve it either of two ways (Settings → Pages → Build and deployment → Source):
+
+- **Deploy from a branch** (`main`, `/ (root)`). Nothing else to set up: every push to `main` republishes the repository as it is. The root `index.html` opens the studio, and `.nojekyll` turns off Jekyll.
+- **GitHub Actions** (recommended once you're editing often). The `pages` workflow runs the tests first and publishes only the app files (`npm run build` → `_site/`). Run it from the Actions tab, or add the repository variable `ENABLE_GITHUB_PAGES = true` to deploy on every push to `main`.
+
+The wind tunnel needs a browser with WebGPU; the Model and Optics tabs work in any current browser.
 
 ## License
 
